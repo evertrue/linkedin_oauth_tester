@@ -5,9 +5,7 @@ require 'bundler'
 require 'dotenv'
 Dotenv.load
 
-require 'sinatra/base'
 require 'active_support/all'
-
 require 'securerandom'
 require 'linkedin2'
 require 'selenium-webdriver'
@@ -15,36 +13,32 @@ require 'yaml'
 require 'redis'
 require 'open-uri'
 require 'cgi'
-require 'byebug'
 
-def linkedin_client
-  @linkedin_client ||= LinkedIn::Client.new key: ENV['LINKEDIN_APP_KEY'],
-                                            secret: ENV['LINKEDIN_SECRET'],
-                                            redirect_uri: 'http://localhost:9292/oauth/callback',
-                                            scope: %i(r_basicprofile w_messages r_emailaddress r_network)
-end
-
-def webdriver
-  @webdriver ||= Selenium::WebDriver.for :chrome
-end
-
-class LinkedinOauthTest < Sinatra::Application
-  get '/oauth/callback' do
-    code, state = params[:code], params[:state]
-
-    content_type :json
-    { code: code, state: state }.to_json
+class LinkedInTest
+  def linkedin_client
+    @linkedin_client ||= LinkedIn::Client.new key: ENV['LINKEDIN_APP_KEY'],
+                                              secret: ENV['LINKEDIN_SECRET'],
+                                              redirect_uri: 'http://localhost:9292/oauth/callback',
+                                              scope: %i(r_basicprofile w_messages r_emailaddress r_network)
   end
-end
 
-if __FILE__==$0
-  puts "Running..."
+  def webdriver
+    @webdriver ||= Selenium::WebDriver.for :chrome
+  end
 
-  accounts = YAML.load_file('accounts.yml')
+  def redis
+    @redis ||= Redis.new
+  end
 
-  redis = Redis.new
+  def execute
+    accounts = YAML.load_file('accounts.yml')
 
-  accounts.each do |name, config|
+    accounts.each do |name, config|
+      process_account name, config
+    end
+  end
+
+  def process_account(name, config)
     puts name
 
     if last_run = redis.get("lidstest:accounts:#{name}:last_run")
@@ -84,16 +78,18 @@ if __FILE__==$0
       cache.merge! uid: profile.id if profile
 
       redis.sadd "lidstest:successes", "accounts:#{name}:#{state}"
-      puts "\tToken generated: #{token}"
+      puts "\t- Token generated: #{token}"
     rescue => e
       cache.merge! error_message: e.message, error_type: e.class.to_s
 
       redis.sadd "lidstest:failures", "accounts:#{name}:#{state}"
-      puts "\tFailed to generate valid token"
+      puts "\t- Failed to generate valid token"
     ensure
       redis.hmset "lidstest:accounts:#{name}:#{state}", *cache.to_a.flatten
     end
   end
 
-  webdriver.quit
+  def close
+    webdriver.quit
+  end
 end

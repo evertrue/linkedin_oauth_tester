@@ -1,3 +1,3 @@
-require './app'
+require './callback_service'
 
-run LinkedinOauthTest
+run CallbackService
